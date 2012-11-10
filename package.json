@@ -1,10 +1,23 @@
 {
     "name": "addressbook"
   , "version": "0.0.1"
-  , "private": true
+  , "description": "Addressbook keeps tracking available node instances backed by Redis."
+  , "repository": {
+      "type": "git",
+      "url": "git://github.com/kazuyukitanimura/addressbook.git"
+  }
+  , "main" : "./index.js"
+  , "keywords" : ["redis", "mdns"]
   , "dependencies": {
       "redis" : ">= 0.8.2"
   }
+  , "devDependencies": {
+      "mocha" : ">= 1.7.0"
+  }
+  , "scripts" : {
+      "test" : "mocha"
+  }
   , "engine": "node >= 0.8.14"
   , "license": "MIT"
+  , "author": "kazuyukitanimura <kazuyukitanimura@gmail.com>"
 }

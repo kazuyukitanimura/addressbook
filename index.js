@@ -2,41 +2,64 @@ var os = require('os');
 var redis = require("redis");
 var dbName = 'addressbook';
 
-var NodeAddressbook = module.exports = function(port, host, redisOpt) {
-  var client = this.client = redis.createClient(port, host, redisOpt);
-  client.on('error', function(err) {
-    console.error(err);
-  });
-  this.myAddress;
-  this.protocols;
-  this.addressbook;
-};
+var Addressbook = module.exports = function Addressbook(port, host, options, password) {
+  if (! (this instanceof Addressbook)) { // enforcing new
+    return new Addressbook(port, host, options, password);
+  }
 
-var returnCallBack = function(cb, err, data) {
-  if (!cb) {
-    console.error('callback function is mandatory');
-    process.exit(0);
-  }
-  process.nextTick(cb.bind(err, data));
-};
-
-NodeAddressbook.prototype.update = function(protocols, cb) {
-  //protocols = [{
-  //  protocol: 'tcp',
-  //  port: '6789'
-  //}];
-  if (typeof protocols === 'function') {
-    cb = protocols;
-    protocols = undefined;
-  }
-  if (protocols && ! Array.isArray(protocols)) {
-    returnCallBack(cb, 'protocols has to be an Array');
-  }
-  if (!protocols) {
-    protocols = this.protocols;
-    if (!protocols) {
-      returnCallBack(cb, 'protocols has to be provided at least once');
+  this.port = port;
+  this.host = host;
+  this.options = options;
+  this.password = password;
+  var connect = function() {
+    var client = this.client = redis.createClient(this.port, this.host, this.options).on('error', function(err) {
+      console.error(err, 'reconnecting');
+      connect.call(this);
+    });
+    var password = this.password;
+    if (password) {
+      client.auth(password, function() {});
     }
+  };
+  connect.call(this);
+  this.myAddress = ''; // ip address of local machine, either IPv4 or IPv6
+  this.myContacts = []; // local server servicies e.g., [{port:portnumber}, ...]
+  this.addressbook = {}; // remote server servicies e.g., {ipaddress:[{port:portnumber}, ...], ...}
+};
+
+var returnCallBack = function returnCallBack(cb, err, data) {
+  if (! (err instanceof Error)) {
+    err = new Error(err);
+  }
+  if (cb) {
+    // until setImmediate() is available, let's use bind for now
+    process.nextTick(cb.bind(null, err, data));
+  } else {
+    throw err;
+  }
+};
+
+Addressbook.prototype.update = function update(myContacts, cb) {
+  var i;
+  var self = this;
+  if (typeof myContacts === 'function') {
+    cb = myContacts;
+    myContacts = undefined;
+  }
+  if (myContacts) {
+    if (!Array.isArray(myContacts)) {
+      returnCallBack(cb, 'myContacts has to be an Array');
+      return;
+    } else {
+      for (i = myContacts.length; i--;) {
+        if (! (myContacts[i].port && myContacts[i].protocol)) {
+          returnCallBack(cb, 'each contact in myContacts has to have a port number');
+          return;
+        }
+      }
+    }
+  } else {
+    myContacts = this.myContacts;
   }
 
   // get the network IP
@@ -44,35 +67,62 @@ NodeAddressbook.prototype.update = function(protocols, cb) {
   var ifaces = os.networkInterfaces();
   var en0;
   for (var dev in ifaces) {
-    ifaces[dev].forEach(function(details) {
+    var ifacesDev = ifaces[dev];
+    for (i = ifacesDev.length; i--;) {
+      var details = ifacesDev[i];
       if (details.family === 'IPv4' || details.family === 'IPv6') {
-        if (dev === 'en0' && !en0) {
+        if (dev === 'en0' && ! en0) {
           en0 = details.address;
         }
       }
-    });
+    }
   }
 
   if (!en0) {
     returnCallBack(cb, 'No network IP found');
+    return;
   } else {
     var client = this.client;
 
-    if (en0 !== this.myAddress || protocols !== this.protocols) {
+    if (en0 !== this.myAddress || myContacts !== this.myContacts) {
       this.myAddress = en0;
-      this.protocols = protocols;
-      client.hset(dbName, en0, JSON.stringify(protocols), function(err, res) {
-        if (err) {
-          returnCallBack(cb, err);
-        } else if (res !== 0) {
-          returnCallBack(cb, 'Redis did not return 0');
-        }
-      });
+      this.myContacts = myContacts;
+      if (myContacts) {
+        client.hset(dbName, en0, JSON.stringify(myContacts), function(err, res) {
+          if (err) {
+            returnCallBack(cb, err);
+            return;
+          } else if (res !== 0) {
+            returnCallBack(cb, 'Redis did not return 0, but returned', res);
+            return;
+          }
+        });
+      }
     }
 
     client.hgetall(dbName, function(err, data) {
-      returnCallBack(cb, err, JSON.parse(data));
+      var addressbook = {};
+      self.addressbook = addressbook;
+      for (var key in data) {
+        addressbook[key] = JSON.parse(data[key]);
+      }
+      returnCallBack(cb, err, addressbook);
+      return;
     });
   }
+};
+
+Addressbook.prototype.pick = function pick(n) {
+  var addressbook = this.addressbook;
+  var host;
+  var c = 0;
+  for (var key in addressbook) {
+    if (Math.random() * ++c < 1) {
+      host = key;
+    }
+  }
+  var ret = addressbook[host];
+  ret.host = host;
+  return ret;
 };
 
