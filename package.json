@@ -1,0 +1,10 @@
+{
+    "name": "addressbook"
+  , "version": "0.0.1"
+  , "private": true
+  , "dependencies": {
+      "redis" : ">= 0.8.2"
+  }
+  , "engine": "node >= 0.8.14"
+  , "license": "MIT"
+}
